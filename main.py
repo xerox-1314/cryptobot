@@ -1,9 +1,10 @@
 import telebot
-import json
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import schedule
 import time
 from config import token
 from pybit.unified_trading import HTTP
+from main_db import change_info, get_info
 bot = telebot.TeleBot(token)
 
 
@@ -20,13 +21,16 @@ class API:
         return float(price)
 
     def check_change_price(self, chat_id):
-        with open('info.json', 'r') as file:
-            info = json.load(file)
+        # with open('info.json', 'r') as file:
+        #     info = json.load(file)
+        info = get_info(chat_id)
+        procent, last_price = float(info[0]), float(info[1])
         price_now = self.get_not_price()
-        change = (price_now / info['last_price'] - 1) * 100
-        if abs(change) >= info['procent']:
-            with open('info.json', 'w') as file:
-                json.dump({'procent': info['procent'], "last_price": price_now}, file)
+        change = (price_now / last_price - 1) * 100
+        if abs(change) >= procent:
+            # with open('info.json', 'w') as file:
+            #     json.dump({'procent': info['procent'], "last_price": price_now}, file)
+            change_info(chat_id, procent, price_now)
             if change > 0:
                 send_up(change, price_now, chat_id)
             else:
@@ -34,6 +38,13 @@ class API:
 
 
 api = API()
+
+
+def gen_markup():
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    markup.add(InlineKeyboardButton("Прекратить ⛔️", callback_data="stop"), InlineKeyboardButton("Изменить % 📊", callback_data="change"))
+    return markup
 
 
 @bot.message_handler(commands=['start'])
@@ -73,8 +84,9 @@ def check2(message):
         if message.text.replace(".", "", 1).isdigit() and float(message.text) > 0:
             procent = float(message.text)
             last_price = api.get_not_price()
-            with open('info.json', 'w') as file:
-                json.dump({'procent': procent, "last_price": last_price}, file)
+            # with open('info.json', 'w') as file:
+            #     json.dump({'procent': procent, "last_price": last_price}, file)
+            change_info(message.chat.id, procent, last_price)
             bot.send_message(message.chat.id,
                              f'Супер! Теперь я буду оповещать тебя сразу, как только цена NOT изменится на {procent} %')
             work(message.chat.id)
@@ -84,12 +96,22 @@ def check2(message):
             bot.register_next_step_handler(k, check2)
 
 
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == "stop":
+        bot.send_message(call.id, 'Окей, теперь я не буду отслеживать NOT 😔')
+        return schedule.CancelJob
+    elif call.data == "change":
+        k = bot.send_message(call.id, 'Без проблем. Напиши процент изменения прайса NOT, который ты хочешь отслеживать.')
+        bot.register_next_step_handler(k, check2)
+
+
 def send_up(change, price_now, chat_id):
-    bot.send_message(chat_id, f'🟢 Цена NOT изменилась на +{change} %. Текущий курс: {price_now}')
+    bot.send_message(chat_id, f'🟢 Цена NOT изменилась на +{change:.4f} %. Текущий курс: {price_now}', reply_markup=gen_markup())
 
 
 def send_down(change, price_now, chat_id):
-    bot.send_message(chat_id, f'🔴 Цена NOT изменилась на -{change} %. Текущий курс: {price_now}')
+    bot.send_message(chat_id, f'🔴 Цена NOT изменилась на -{change:.4f} %. Текущий курс: {price_now}', reply_markup=gen_markup())
 
 
 def work(chat_id):

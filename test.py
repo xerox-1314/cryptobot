@@ -1,8 +1,8 @@
-import schedule
-import time
-def test(name):
-    print(name)
-schedule.every().second.do(test, 'hi')
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+from pybit.unified_trading import HTTP
+session = HTTP(testnet=False)
+res = session.get_tickers(category="spot")
+l = []
+for symbol in res['result']['list']:
+    l.append(symbol['symbol'])
+l.sort()
+print(l)
